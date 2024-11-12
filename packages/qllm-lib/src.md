@@ -1,6 +1,7 @@
 # Table of Contents
 - src/index.ts
 - src/utils/index.ts
+- src/utils/models-cost/index.ts
 - src/utils/file-handlers/local-handler.ts
 - src/utils/file-handlers/index.ts
 - src/utils/file-handlers/factory.ts
@@ -36,6 +37,7 @@
 - src/conversation/conversation-reducer.ts
 - src/conversation/index.ts
 - src/conversation/conversation-manager.ts
+- src/types/models-cost.ts
 - src/types/index.ts
 - src/types/llm-types.ts
 - src/types/workflow-types.ts
@@ -59,14 +61,16 @@
 - src/storage/index.ts
 - src/storage/in-memory-storage-provider.ts
 - package.json
+- tsconfig.json
+- rollup.config.mjs
 
 ## File: src/index.ts
 
 - Extension: .ts
 - Language: typescript
 - Size: 2038 bytes
-- Created: 2024-11-06 18:03:45
-- Modified: 2024-11-06 18:03:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -170,9 +174,9 @@ export default {
 
 - Extension: .ts
 - Language: typescript
-- Size: 108 bytes
-- Created: 2024-11-06 18:03:52
-- Modified: 2024-11-06 18:03:52
+- Size: 139 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -181,6 +185,204 @@ export * from './images';
 export * from './functions';
 export * from './logger';
 export * from "./document";
+export * from "./models-cost";
+```
+
+## File: src/utils/models-cost/index.ts
+
+- Extension: .ts
+- Language: typescript
+- Size: 5877 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
+
+### Code
+
+```typescript
+import { Request, Response, NextFunction } from 'express';
+import fs from 'fs/promises';
+import path from 'path';
+import logger from '../logger/index.js';
+import { TokenPrices, TokenResult, TokenCalculateInput, TokenCalculateOutput, TokenCountResult } from "../../types"
+
+
+export class TokenController {
+
+  static async calculateInput(params: Pick<TokenCalculateInput, 'input_text' | 'provider' | 'model'>): Promise<TokenCountResult> {
+    
+    const tiktoken = await import('tiktoken');
+    if (!params.input_text) {
+      throw new Error("Input text is required");
+    }
+
+    try {
+      const encoding = tiktoken.encoding_for_model("gpt-3.5-turbo");
+      const inputTokens = encoding.encode(params.input_text).length;
+
+      const priceFile = path.join('.', 'data', 'token_price.json');
+      const data = await fs.readFile(priceFile, 'utf-8');
+      const tokenPrices: TokenPrices = JSON.parse(data);
+      const results: TokenResult[] = [];
+
+      for (const providerData of tokenPrices.providers) {
+        if (params.provider && providerData.name.toLowerCase() !== params.provider.toLowerCase()) {
+          continue;
+        }
+
+        for (const modelData of providerData.models) {
+          if (params.model && modelData.name.toLowerCase() !== params.model.toLowerCase()) {
+            continue;
+          }
+
+          const inputPrice = (inputTokens / 1000) * modelData.input_price;
+
+          results.push({
+            provider: providerData.name,
+            model: modelData.name,
+            input_tokens: inputTokens,
+            output_tokens: 0,
+            total_tokens: inputTokens,
+            input_price: inputPrice,
+            output_price: 0,
+            total_price: inputPrice
+          });
+        }
+      }
+
+      encoding.free();
+
+      return {
+        tokens: inputTokens,
+        prices: results
+      };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  // Calculate only output tokens
+  static async calculateOutput(params: Pick<TokenCalculateInput, 'output_text' | 'provider' | 'model'>): Promise<TokenCountResult> {
+    
+    const tiktoken = await import('tiktoken');
+    if (!params.output_text) {
+      throw new Error("Output text is required");
+    }
+
+    try {
+      const encoding = tiktoken.encoding_for_model("gpt-3.5-turbo");
+      const outputTokens = encoding.encode(params.output_text).length;
+
+      const priceFile = path.join('.', 'data', 'token_price.json');
+      const data = await fs.readFile(priceFile, 'utf-8');
+      const tokenPrices: TokenPrices = JSON.parse(data);
+      const results: TokenResult[] = [];
+
+      for (const providerData of tokenPrices.providers) {
+        if (params.provider && providerData.name.toLowerCase() !== params.provider.toLowerCase()) {
+          continue;
+        }
+
+        for (const modelData of providerData.models) {
+          if (params.model && modelData.name.toLowerCase() !== params.model.toLowerCase()) {
+            continue;
+          }
+
+          const outputPrice = (outputTokens / 1000) * modelData.output_price;
+
+          results.push({
+            provider: providerData.name,
+            model: modelData.name,
+            input_tokens: 0,
+            output_tokens: outputTokens,
+            total_tokens: outputTokens,
+            input_price: 0,
+            output_price: outputPrice,
+            total_price: outputPrice
+          });
+        }
+      }
+
+      encoding.free();
+
+      return {
+        tokens: outputTokens,
+        prices: results
+      };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+
+  static async calculate(params: TokenCalculateInput): Promise<TokenCalculateOutput> {
+    
+    const tiktoken = await import('tiktoken');
+    const { input_text, output_text, provider, model } = params;
+
+    if (!input_text && !output_text) {
+      throw new Error("At least one of input_text or output_text is required");
+    }
+
+    try {
+      const encoding = tiktoken.encoding_for_model("gpt-3.5-turbo");
+      const inputTokens = input_text ? encoding.encode(input_text).length : 0;
+      const outputTokens = output_text ? encoding.encode(output_text).length : 0;
+      const totalTokens = inputTokens + outputTokens;
+
+      const priceFile = path.join('.', 'data', 'token_price.json');
+      let data: string;
+      try {
+        data = await fs.readFile(priceFile, 'utf-8');
+      } catch (error) {
+        throw new Error("Error reading price file");
+      }
+
+      const tokenPrices: TokenPrices = JSON.parse(data);
+      const results: TokenResult[] = [];
+
+      for (const providerData of tokenPrices.providers) {
+        if (provider && providerData.name.toLowerCase() !== provider.toLowerCase()) {
+          continue;
+        }
+
+        for (const modelData of providerData.models) {
+          if (model && modelData.name.toLowerCase() !== model.toLowerCase()) {
+            continue;
+          }
+
+          const inputPrice = (inputTokens / 1000) * modelData.input_price;
+          const outputPrice = (outputTokens / 1000) * modelData.output_price;
+          const totalPrice = inputPrice + outputPrice;
+
+          const tokenResult: TokenResult = {
+            provider: providerData.name,
+            model: modelData.name,
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            total_tokens: inputTokens + outputTokens,
+            input_price: inputPrice,
+            output_price: outputPrice,
+            total_price: totalPrice
+          };
+
+          results.push(tokenResult);
+        }
+      }
+
+      encoding.free();
+
+      return {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        prices: results
+      };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+}
+
 ```
 
 ## File: src/utils/file-handlers/local-handler.ts
@@ -188,8 +390,8 @@ export * from "./document";
 - Extension: .ts
 - Language: typescript
 - Size: 819 bytes
-- Created: 2024-11-06 21:04:31
-- Modified: 2024-11-06 21:04:31
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -230,8 +432,8 @@ export class LocalFileHandler implements FileHandler {
 - Extension: .ts
 - Language: typescript
 - Size: 89 bytes
-- Created: 2024-11-06 21:05:15
-- Modified: 2024-11-06 21:05:15
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -246,8 +448,8 @@ export * from "./factory";
 - Extension: .ts
 - Language: typescript
 - Size: 370 bytes
-- Created: 2024-11-06 21:05:05
-- Modified: 2024-11-06 21:05:05
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -270,8 +472,8 @@ export function createFileHandler(path: string): FileHandler {
 - Extension: .ts
 - Language: typescript
 - Size: 1788 bytes
-- Created: 2024-11-06 17:53:01
-- Modified: 2024-11-06 17:53:01
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -340,8 +542,8 @@ export class S3FileHandler implements FileHandler {
 - Extension: .ts
 - Language: typescript
 - Size: 2783 bytes
-- Created: 2024-11-06 17:54:04
-- Modified: 2024-11-06 17:54:04
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -437,8 +639,8 @@ export class FileAccessError extends Error {
 - Extension: .ts
 - Language: typescript
 - Size: 2038 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -532,8 +734,8 @@ export default logger;
 - Extension: .ts
 - Language: typescript
 - Size: 37 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -547,8 +749,8 @@ export * from './conversation-util';
 - Extension: .ts
 - Language: typescript
 - Size: 5237 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -749,8 +951,8 @@ export function sortConversationsByLastUpdate(conversations: Conversation[]): Co
 - Extension: .ts
 - Language: typescript
 - Size: 2948 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -845,8 +1047,8 @@ export function clearCachedCredentials(): void {
 - Extension: .ts
 - Language: typescript
 - Size: 1032 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -894,8 +1096,8 @@ export async function listModels(
 - Extension: .ts
 - Language: typescript
 - Size: 418 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -919,8 +1121,8 @@ export const createTextMessageContent = (content: string | string[]): ChatMessag
 - Extension: .ts
 - Language: typescript
 - Size: 2780 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1019,8 +1221,8 @@ export function extractMimeType(dataUrl: string): string | null {
 - Extension: .ts
 - Language: typescript
 - Size: 81 bytes
-- Created: 2024-11-06 18:03:34
-- Modified: 2024-11-06 18:03:34
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1033,15 +1235,15 @@ export * from "./document-loader";
 
 - Extension: .ts
 - Language: typescript
-- Size: 1974 bytes
-- Created: 2024-11-06 21:03:06
-- Modified: 2024-11-06 21:03:06
+- Size: 2922 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
 ```typescript
 // src/utils/document/format-handlers.ts
-//import * as pdf from 'pdf-parse';
+// import * as pdf from 'pdf-parse';
 import * as docx from 'docx';
 import * as xlsx from 'xlsx';
 import * as yaml from 'js-yaml';
@@ -1063,7 +1265,10 @@ export const formatHandlers: Record<string, FormatHandler> = {
   }, */
   
   docx: {
-    mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    mimeTypes: [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ],
     handle: async (buffer: Buffer) => {
       const result = await mammoth.extractRawText({ buffer });
       return result.value;
@@ -1071,46 +1276,77 @@ export const formatHandlers: Record<string, FormatHandler> = {
   },
 
   txt: {
-    mimeTypes: ['text/plain'],
+    mimeTypes: ['text/plain', 'text/markdown', 'text/csv'],
     handle: async (buffer: Buffer) => buffer.toString('utf-8')
   },
 
   json: {
     mimeTypes: ['application/json'],
     handle: async (buffer: Buffer) => {
-      const content = JSON.parse(buffer.toString());
-      return JSON.stringify(content, null, 2);
+      try {
+        const content = JSON.parse(buffer.toString());
+        return JSON.stringify(content, null, 2);
+      } catch (error) {
+        throw new Error(`Invalid JSON file: ${error}`);
+      }
     }
   },
 
   yaml: {
-    mimeTypes: ['text/yaml', 'application/x-yaml'],
+    mimeTypes: ['text/yaml', 'application/x-yaml', 'text/yml', 'application/yml'],
     handle: async (buffer: Buffer) => {
-      const content = yaml.load(buffer.toString());
-      return yaml.dump(content);
+      try {
+        const content = yaml.load(buffer.toString());
+        return yaml.dump(content);
+      } catch (error) {
+        throw new Error(`Invalid YAML file: ${error}`);
+      }
     }
   },
 
   xlsx: {
-    mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    mimeTypes: [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ],
     handle: async (buffer: Buffer) => {
-      const workbook = xlsx.read(buffer);
-      let text = '';
-      for (const sheet of workbook.SheetNames) {
-        const worksheet = workbook.Sheets[sheet];
-        text += `Sheet: ${sheet}\n`;
-        text += xlsx.utils.sheet_to_txt(worksheet);
-        text += '\n\n';
+      try {
+        const workbook = xlsx.read(buffer);
+        const sheets = workbook.SheetNames.map(sheet => {
+          const worksheet = workbook.Sheets[sheet];
+          return {
+            name: sheet,
+            content: xlsx.utils.sheet_to_txt(worksheet)
+          };
+        });
+
+        return sheets.map(sheet => 
+          `Sheet: ${sheet.name}\n${sheet.content}\n\n`
+        ).join('');
+      } catch (error) {
+        throw new Error(`Failed to process Excel file: ${error}`);
       }
-      return text;
     }
   }
 };
 
 export function getHandlerForMimeType(mimeType: string): FormatHandler | undefined {
+  // Normalize mime type to lowercase
+  const normalizedMimeType = mimeType.toLowerCase();
+  
   return Object.values(formatHandlers).find(handler => 
-    handler.mimeTypes.includes(mimeType)
+    handler.mimeTypes.some(type => type.toLowerCase() === normalizedMimeType)
   );
+}
+
+export function getSupportedMimeTypes(): string[] {
+  return Object.values(formatHandlers)
+    .flatMap(handler => handler.mimeTypes)
+    .sort();
+}
+
+export function isSupportedMimeType(mimeType: string): boolean {
+  return !!getHandlerForMimeType(mimeType);
 }
 ```
 
@@ -1118,9 +1354,9 @@ export function getHandlerForMimeType(mimeType: string): FormatHandler | undefin
 
 - Extension: .ts
 - Language: typescript
-- Size: 10172 bytes
-- Created: 2024-11-07 09:52:46
-- Modified: 2024-11-07 09:52:46
+- Size: 10310 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1138,6 +1374,7 @@ import mime from 'mime-types';
 import { URL } from 'url';
 import { createHash } from 'crypto'; // New import statement
 import { getHandlerForMimeType, FormatHandler } from './format-handlers';
+import logger from '../logger';
 
 
 const gunzip = promisify(zlib.gunzip);
@@ -1365,6 +1602,7 @@ export class DocumentLoader extends EventEmitter {
         return { content: text, mimeType };
       } else {
         // Fallback to basic text conversion
+        logger.warn(`No handler found for mime type ${mimeType}, falling back to basic text conversion`);
         return { 
           content: buffer.toString(this.options.encoding), 
           mimeType 
@@ -1463,8 +1701,8 @@ export class DocumentLoader extends EventEmitter {
 - Extension: .ts
 - Language: typescript
 - Size: 3036 bytes
-- Created: 2024-11-06 20:59:29
-- Modified: 2024-11-06 20:59:29
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1566,8 +1804,8 @@ function fileUrlToPath(fileUrl: string): string {
 - Extension: .ts
 - Language: typescript
 - Size: 2800 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1687,8 +1925,8 @@ export function createFunctionToolFromZod(config: FunctionToolConfig): FunctionT
 - Extension: .ts
 - Language: typescript
 - Size: 74 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 18:01:56
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1703,8 +1941,8 @@ export * from './workflow-manager';
 - Extension: .ts
 - Language: typescript
 - Size: 2392 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:50:58
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1789,8 +2027,8 @@ export class WorkflowManager {
 - Extension: .ts
 - Language: typescript
 - Size: 4270 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-06 15:43:01
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1927,8 +2165,8 @@ export class WorkflowExecutor extends EventEmitter {
 - Extension: .ts
 - Language: typescript
 - Size: 1380 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -1972,8 +2210,8 @@ function getBuilder(content: { mimeType: string; content: string }): TemplateDef
 - Extension: .ts
 - Language: typescript
 - Size: 12824 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2418,8 +2656,8 @@ export function generatePromptFromTemplate(
 - Extension: .ts
 - Language: typescript
 - Size: 5209 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:32:52
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2590,8 +2828,8 @@ export class TemplateManager {
 - Extension: .ts
 - Language: typescript
 - Size: 178 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2609,8 +2847,8 @@ export * from './types';
 - Extension: .ts
 - Language: typescript
 - Size: 3399 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2725,8 +2963,8 @@ export class OutputVariableExtractor {
 - Extension: .ts
 - Language: typescript
 - Size: 3116 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2846,9 +3084,9 @@ export class FileOperationError extends TemplateManagerError {
 
 - Extension: .ts
 - Language: typescript
-- Size: 5177 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Size: 5204 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -2858,7 +3096,7 @@ import * as z from 'zod';
 export const templateVariableSchema = z
   .object({
     type: z
-      .enum(['string', 'number', 'boolean', 'array'])
+      .enum(['string', 'number', 'boolean', 'array', 'file_path', 'files_path'])
       .describe('The data type of the variable.'),
     description: z.string().describe('A brief description of the variable.'),
     default: z.any().optional().describe('The default value for the variable, if applicable.'),
@@ -2990,8 +3228,8 @@ export type OutputVariable = z.infer<typeof outputVariableSchema>;
 - Extension: .ts
 - Language: typescript
 - Size: 1780 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -3056,9 +3294,9 @@ export class TemplateValidator {
 
 - Extension: .ts
 - Language: typescript
-- Size: 9582 bytes
-- Created: 2024-11-06 21:06:26
-- Modified: 2024-11-06 21:06:26
+- Size: 11247 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -3201,20 +3439,56 @@ export class TemplateExecutor extends EventEmitter {
     context: ExecutionContext,
     template: TemplateDefinition,
     initialVariables: Record<string, any>,
-  ): Promise<Record<string, any>> {
-    if (!context.onPromptForMissingVariables)
-      return this.applyDefaultValues(template, initialVariables);
+): Promise<Record<string, any>> {
+    const resolvedVariables = { ...initialVariables };
 
-    const missingVariables = this.findMissingVariables(template, initialVariables);
-    if (missingVariables.length > 0) {
-      const promptedVariables = await context.onPromptForMissingVariables(
-        template,
-        initialVariables,
-      );
-      return this.applyDefaultValues(template, { ...initialVariables, ...promptedVariables });
+    // Handle file path variables first
+    for (const [key, value] of Object.entries(initialVariables)) {
+        const varDef = template.input_variables?.[key];
+        if (!varDef) continue;
+
+        if (varDef.type === 'file_path' || varDef.type === 'files_path') {
+            try {
+                if (Array.isArray(value) && varDef.type === 'files_path') {
+                    // Handle multiple files
+                    const contents = await Promise.all(value.map(async (filePath) => {
+                        const loader = new DocumentLoader(filePath, {
+                            encoding: 'utf-8',
+                            useCache: true
+                        });
+                        const { content } = await loader.loadAsString();
+                        return content;
+                    }));
+                    resolvedVariables[key] = contents.join('\n\n');
+                    varDef["type"] = "string"
+                } else if (typeof value === 'string' && varDef.type === 'file_path') {
+                    // Handle single file
+                    const loader = new DocumentLoader(value, {
+                        encoding: 'utf-8',
+                        useCache: true
+                    });
+                    const { content } = await loader.loadAsString();
+                    resolvedVariables[key] = content;
+                    varDef["type"] = "string"
+                }
+            } catch (error) {
+                this.handleExecutionError(`Failed to process file ${key}: ${error}`);
+            }
+        }
     }
-    return this.applyDefaultValues(template, initialVariables);
-  }
+
+    if (!context.onPromptForMissingVariables) return this.applyDefaultValues(template, resolvedVariables);
+    const missingVariables = this.findMissingVariables(template, resolvedVariables);
+    if (missingVariables.length > 0) {
+        const promptedVariables = await context.onPromptForMissingVariables(
+            template,
+            resolvedVariables,
+        );
+        return this.applyDefaultValues(template, { ...resolvedVariables, ...promptedVariables });
+    }
+
+    return this.applyDefaultValues(template, resolvedVariables);
+}
 
   private applyDefaultValues(
     template: TemplateDefinition,
@@ -3274,8 +3548,12 @@ export class TemplateExecutor extends EventEmitter {
     return content;
   }
 
+  
   private formatValue(value: any): string {
-    return Array.isArray(value) ? value.join('\n') : String(value);
+    if (Array.isArray(value)) {
+        return value.join('\n');
+    }
+    return String(value);
   }
 
   private createChatMessages(content: string): ChatMessage[] {
@@ -3372,8 +3650,8 @@ export class TemplateExecutor extends EventEmitter {
 - Extension: .yaml
 - Language: yaml
 - Size: 1798 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -3442,8 +3720,8 @@ content: |
 - Extension: .ts
 - Language: typescript
 - Size: 4523 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -3626,8 +3904,8 @@ export function extractVariablesFromContent(
 - Extension: .ts
 - Language: typescript
 - Size: 4779 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -3799,8 +4077,8 @@ describe('extractVariablesFromContent', () => {
 - Extension: .ts
 - Language: typescript
 - Size: 6560 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4017,8 +4295,8 @@ const isValidConversation = (data: any): data is Conversation => {
 - Extension: .ts
 - Language: typescript
 - Size: 40 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4032,8 +4310,8 @@ export * from './conversation-manager';
 - Extension: .ts
 - Language: typescript
 - Size: 7107 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4247,13 +4525,71 @@ export const createConversationManager = (
 
 ```
 
+## File: src/types/models-cost.ts
+
+- Extension: .ts
+- Language: typescript
+- Size: 790 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
+
+### Code
+
+```typescript
+
+export interface TokenResult {
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_price: number;
+  output_price: number;
+  total_price: number;
+}
+
+export interface PriceModel {
+  name: string;
+  input_price: number;
+  output_price: number;
+}
+
+export interface Provider {
+  name: string;
+  models: PriceModel[];
+}
+
+export interface TokenPrices {
+  providers: Provider[];
+}
+
+export interface TokenCalculateInput {
+  input_text?: string;
+  output_text?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface TokenCalculateOutput {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  prices: TokenResult[];
+}
+
+export interface TokenCountResult {
+  tokens: number;
+  prices: TokenResult[];
+}
+```
+
 ## File: src/types/index.ts
 
 - Extension: .ts
 - Language: typescript
-- Size: 166 bytes
-- Created: 2024-11-06 17:51:44
-- Modified: 2024-11-06 17:51:44
+- Size: 197 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4263,6 +4599,7 @@ export * from './llm-types';
 export * from './conversations-types';
 export * from './workflow-types';
 export * from './file-handler';
+export * from './models-cost';
 
 ```
 
@@ -4271,8 +4608,8 @@ export * from './file-handler';
 - Extension: .ts
 - Language: typescript
 - Size: 7167 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4549,8 +4886,8 @@ export type ChatCompletionParams = {
 - Extension: .ts
 - Language: typescript
 - Size: 722 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 19:40:40
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4590,8 +4927,8 @@ export interface WorkflowExecutionContext {
 - Extension: .ts
 - Language: typescript
 - Size: 3173 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4695,8 +5032,8 @@ export class InvalidConversationOperationError extends ConversationError {
 - Extension: .ts
 - Language: typescript
 - Size: 190 bytes
-- Created: 2024-11-06 17:51:36
-- Modified: 2024-11-06 17:51:36
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4714,8 +5051,8 @@ export interface FileHandler {
 - Extension: .ts
 - Language: typescript
 - Size: 3184 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4835,8 +5172,8 @@ export abstract class BaseEmbeddingProvider implements EmbeddingProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 1834 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -4911,8 +5248,8 @@ export async function getEmbeddingProvider(providerName: string): Promise<Embedd
 - Extension: .ts
 - Language: typescript
 - Size: 5678 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5112,8 +5449,8 @@ export class GroqProvider extends BaseLLMProvider implements EmbeddingProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 7388 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5387,8 +5724,8 @@ function formatOptions(options: LLMOptions): Partial<OllamaOptions> {
 - Extension: .ts
 - Language: typescript
 - Size: 1614 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5460,8 +5797,8 @@ function formatModelDescription(details: OllamaModelDetails): string {
 - Extension: .ts
 - Language: typescript
 - Size: 9682 bytes
-- Created: 2024-11-06 17:34:53
-- Modified: 2024-11-06 17:34:53
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5751,8 +6088,8 @@ export class AnthropicProvider extends BaseLLMProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 245 bytes
-- Created: 2024-11-06 17:31:40
-- Modified: 2024-11-06 17:31:40
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5770,8 +6107,8 @@ export const DEFAULT_MAX_TOKENS = 128 * 1024; // 128,000 tokens
 - Extension: .ts
 - Language: typescript
 - Size: 2227 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5840,8 +6177,8 @@ export const createAwsBedrockAnthropicProvider = async () => {
 - Extension: .ts
 - Language: typescript
 - Size: 1861 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -5912,8 +6249,8 @@ export async function formatContent(
 - Extension: .ts
 - Language: typescript
 - Size: 7093 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -6158,8 +6495,8 @@ export class MistralProvider implements LLMProvider, EmbeddingProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 4743 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -6336,8 +6673,8 @@ export class OpenRouterProvider extends BaseLLMProvider implements LLMProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 5816 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -6535,8 +6872,8 @@ export class PerplexityProvider implements LLMProvider, EmbeddingProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 1856 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -6619,8 +6956,8 @@ export const DEFAULT_PERPLEXITY_MODEL = PERPLEXITY_SONAR_MODELS.SONAR_SMALL_ONLI
 - Extension: .ts
 - Language: typescript
 - Size: 9990 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -6912,8 +7249,8 @@ export class OpenAIProvider implements LLMProvider, EmbeddingProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 5847 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -7102,8 +7439,8 @@ export class SQLiteConversationStorageProvider implements StorageProvider {
 - Extension: .ts
 - Language: typescript
 - Size: 878 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -7143,8 +7480,8 @@ export default function createStorageProvider(
 - Extension: .ts
 - Language: typescript
 - Size: 983 bytes
-- Created: 2024-11-06 17:24:50
-- Modified: 2024-11-05 17:05:45
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -7183,9 +7520,9 @@ export class InMemoryStorageProvider implements StorageProvider {
 
 - Extension: .json
 - Language: json
-- Size: 2973 bytes
-- Created: 2024-11-06 20:53:47
-- Modified: 2024-11-06 20:53:47
+- Size: 3106 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
 
 ### Code
 
@@ -7238,6 +7575,7 @@ export class InMemoryStorageProvider implements StorageProvider {
     "@npmcli/fs": "^3.1.1",
     "@rollup/plugin-node-resolve": "15.2.3",
     "@rollup/plugin-terser": "0.4.4",
+    "@rollup/plugin-wasm": "6.2.2",
     "@types/jest": "^29.5.12",
     "@types/js-yaml": "^4.0.9",
     "@types/mime-types": "^2.1.4",
@@ -7273,6 +7611,7 @@ export class InMemoryStorageProvider implements StorageProvider {
     "pdf-parse": "1.1.1",
     "pptx-parser": "1.1.7-beta.9",
     "sqlite": "^5.1.1",
+    "tiktoken": "1.0.17",
     "uuid": "^10.0.0",
     "xlsx": "0.18.5",
     "yaml": "^2.5.0",
@@ -7291,8 +7630,126 @@ export class InMemoryStorageProvider implements StorageProvider {
   },
   "publishConfig": {
     "access": "public"
+  },
+  "resolutions": {
+    "glob": "^8.0.0",
+    "inflight": "^2.0.0"
   }
 }
+
+```
+
+## File: tsconfig.json
+
+- Extension: .json
+- Language: json
+- Size: 663 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
+
+### Code
+
+```json
+{
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist/tsc",
+    "rootDir": "./src",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "__tests__/**/*",
+  "src/**/*.ts",
+  "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+
+```
+
+## File: rollup.config.mjs
+
+- Extension: .mjs
+- Language: unknown
+- Size: 1300 bytes
+- Created: 2024-11-08 14:10:23
+- Modified: 2024-11-08 14:10:23
+
+### Code
+
+```unknown
+import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
+import terser from '@rollup/plugin-terser';
+import analyze from 'rollup-plugin-analyzer';
+import gzip from 'rollup-plugin-gzip';
+import wasm from '@rollup/plugin-wasm';
+
+const isProduction = false;
+
+export default {
+  input: 'dist/tsc/index.js',
+  output: [
+    {
+      dir: 'dist/esm',
+      format: 'esm',
+      sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'dist/tsc',
+    },
+    {
+      dir: 'dist/cjs',
+      format: 'cjs',
+      sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'dist/tsc',
+      exports: 'auto',
+    },
+  ],
+  plugins: [
+    wasm({ 
+      targetEnv: 'node',
+      maxFileSize: 10000000 
+    }),
+    resolve({
+      preferBuiltins: true,
+    }),
+    commonjs(),
+    json(),
+    isProduction && terser(),
+    analyze({ summaryOnly: true }),
+    isProduction && gzip(),
+  ],
+  external: [
+    'tiktoken',
+    /*    'openai',
+    'groq-sdk',
+    '@anthropic-ai/sdk',
+    '@anthropic-ai/bedrock-sdk',
+    '@aws-sdk/client-bedrock',
+    '@aws-sdk/credential-providers',
+    'axios',
+    'js-yaml',
+    'mime-types',
+    'ollama',
+    'sqlite',
+    'uuid',
+    'tiktoken',
+    'zod',*/
+  ],
+};
 
 ```
 

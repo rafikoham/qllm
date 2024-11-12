@@ -12,6 +12,7 @@ import { URL } from 'url';
 import { createHash } from 'crypto'; // New import statement
 import { getHandlerForMimeType, FormatHandler } from './format-handlers';
 import logger from '../logger';
+import { DocumentParser, TextParser, JSONParser, YAMLParser, PDFParser, DocxParser, ExcelParser, CSVParser } from './parsers';
 
 
 const gunzip = promisify(zlib.gunzip);
@@ -29,9 +30,17 @@ export interface DocumentLoaderOptions {
   useCache?: boolean;
 }
 
+
 export interface LoadResult<T> {
   content: T;
   mimeType: string;
+  parsedContent?: string;
+}
+
+export interface LoaderOptions {
+  useCache: boolean;
+  chunkSize: number;
+  parsers?: DocumentParser[];
 }
 
 export interface DocumentLoaderEvents {
@@ -45,6 +54,7 @@ export class DocumentLoader extends EventEmitter {
   private inputPath: string;
   private options: Required<DocumentLoaderOptions>;
   private cancelTokenSource: CancelTokenSource | null = null;
+  private parsers: DocumentParser[]; 
 
   constructor(inputPath: string, options: DocumentLoaderOptions = {}) {
     super();
@@ -65,6 +75,16 @@ export class DocumentLoader extends EventEmitter {
         useCache: false,
         ...options,
     };
+
+    this.parsers = [
+      new TextParser(),
+      new JSONParser(),
+      new YAMLParser(),
+      new PDFParser(),
+      new DocxParser(),
+      new ExcelParser(),
+      new CSVParser()
+    ];
   }
 
   private expandTilde(filePath: string): string {
@@ -102,20 +122,27 @@ export class DocumentLoader extends EventEmitter {
         throw new Error('File path cannot contain null bytes');
     }
   }
-  private async loadFromFile(filePath: string): Promise<LoadResult<Buffer>> { 
-    
+
+  private getParser(filename: string): DocumentParser | undefined {
+    return this.parsers.find(parser => parser.supports(filename));
+  }
+  
+  private async loadFromFile(filePath: string): Promise<LoadResult<Buffer>> {
     const expandedPath = this.expandTilde(filePath);
     const absolutePath = path.resolve(expandedPath);
-    
     const mimeType = mime.lookup(absolutePath) || 'application/octet-stream';
 
+    // Check cache if enabled
     if (this.options.useCache) {
       const cachedPath = this.getCachePath(absolutePath);
       if (await this.isCacheValid(absolutePath, cachedPath)) {
-        return { content: await fs.readFile(cachedPath), mimeType };
+        const content = await fs.readFile(cachedPath);
+        const parsedContent = await this.parseContent(content, absolutePath);
+        return { content, mimeType, parsedContent };
       }
     }
 
+    // Load file in chunks
     const fileStats = await fs.stat(absolutePath);
     const totalSize = fileStats.size;
     let loadedSize = 0;
@@ -142,12 +169,42 @@ export class DocumentLoader extends EventEmitter {
 
     const content = Buffer.concat(chunks);
 
+    // Cache content if enabled
     if (this.options.useCache) {
       const cachedPath = this.getCachePath(absolutePath);
       await this.cacheContent(cachedPath, content);
     }
 
-    return { content, mimeType };
+    // Parse content using appropriate parser
+    const parsedContent = await this.parseContent(content, absolutePath);
+
+    return { content, mimeType, parsedContent };
+  }
+
+  private async parseContent(buffer: Buffer, filePath: string): Promise<string | undefined> {
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      return undefined;
+    }
+
+    try {
+      return await parser.parse(buffer, filePath);
+    } catch (error) {
+      this.emit('error', new Error(`Parsing error for ${filePath}: ${error}`));
+      return undefined;
+    }
+  }
+
+  public async load(filePath: string): Promise<string> {
+    try {
+      const result = await this.loadFromFile(filePath);
+      if (!result.parsedContent) {
+        throw new Error(`No parser available for file: ${filePath}`);
+      }
+      return result.parsedContent;
+    } catch (error) {
+      throw new Error(`Failed to load document: ${error}`);
+    }
   }
 
   private async loadFromUrl(url: string): Promise<LoadResult<Buffer>> {

@@ -58,14 +58,14 @@ async function main(): Promise<void> {
 async function executeTemplate(templateDefinition: TemplateDefinition) {
     try {
         // Execute the template
-        const provider = createLLMProvider({ name: "openai" });
+        const provider = createLLMProvider({ name: "openai"});
         const templateExecutor = new TemplateExecutor();
         
         const executionResult = await templateExecutor.execute({
             template: templateDefinition,
             provider: provider,
             variables: {
-                document_content: "./test.txt", // Just pass the file path
+                document_content: "/home/youcef/Téléchargements/cd.pdf", // Just pass the file path
                 max_words: 150,
             },
             stream: true,
