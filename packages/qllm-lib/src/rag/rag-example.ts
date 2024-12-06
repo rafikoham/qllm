@@ -9,7 +9,7 @@ import {
 
 async function main() {
   // Load essay from idh.txt in Node
-  const path = "src/rag/idh.txt";
+  const path = "./idh.txt";
 
   const essay = await fs.readFile(path, "utf-8");
 
@@ -22,7 +22,7 @@ async function main() {
   // Query the index
   const queryEngine = index.asQueryEngine();
   const { response, sourceNodes } = await queryEngine.query({
-    query: "What did the author do in college?",
+    query: "Quel est le pays le plus developpée en Afrique?",
   });
 
   // Output response with sources
