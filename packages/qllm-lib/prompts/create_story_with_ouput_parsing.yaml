@@ -1,0 +1,119 @@
+name: create_satirical_story
+version: '1.1'
+description: Create a witty and satirical story based on a given subject
+author: Raphaël MANSUY
+input_variables:
+  subject:
+    type: string
+    description: The main topic or event for the story
+    place_holder: "Emmanuel Macron dissout l'assemblée"
+  genre:
+    type: string
+    description: The specific genre or style of the story
+    place_holder: 'Humour et satire politique'
+  role:
+    type: string
+    description: The persona or character perspective to write from
+    place_holder: 'Gaspar PROUST'
+  lang:
+    type: string
+    description: The language in which the story should be written
+    place_holder: 'Français'
+  max_length:
+    type: number
+    description: The maximum word count for the story
+    default: 1000
+output_variables:
+  story:
+    type: string
+    description: The complete satirical story
+  parsed_output:
+    type: list
+    description: A structured representation of the story as a nested list
+    schema:
+      - section: string
+        content: 
+          - title: string
+            paragraphs:
+              - list
+      - conclusion: string
+
+content: |
+  Craft a satirical story about {{subject}} from the perspective of {{role}} in {{lang}}, adhering to the {{genre}} style. The story should not exceed {{max_length}} words.
+
+  The story MUST WRITEN in {{lang}} LANGAGE.
+
+  Follow these steps:
+
+  1. Brainstorm 5-7 witty and subversive ideas related to the subject. Present these ideas in a markdown table with columns for "Idea" and "Satirical Angle".
+
+  2. Select the top 3 ideas based on their potential for humor and social commentary.
+
+  3. Develop a compelling outline for the story, incorporating the chosen ideas. Use markdown headers to structure the outline.
+
+  4. Write the full story, ensuring it's engaging, humorous, and thought-provoking. Use markdown formatting to enhance readability and emphasis.
+
+  5. Conclude with a punchy, memorable ending that ties back to the main subject.
+
+  Use the following output structure:
+
+  <ideas>
+  | Idea | Satirical Angle |
+  |------|-----------------|
+  | Idea 1 | Angle 1 |
+  | ... | ... |
+  </ideas>
+
+  <parsed_output>
+  [
+    {
+      "section": "Introduction",
+      "content": [
+        {
+          "title": "Point 1",
+          "paragraphs": [
+            "Detail A",
+            "Detail B"
+          ]
+        },
+        {
+          "title": "Point 2",
+          "paragraphs": [
+            "Detail A",
+            "Detail B"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Main Body",
+      "content": [
+        {
+          "title": "Subsection 1",
+          "paragraphs": [
+            "Content here"
+          ]
+        },
+        {
+          "title": "Subsection 2",
+          "paragraphs": [
+            "Content here"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "Conclusion",
+      "content": "Final memorable punchline."
+    }
+  ]
+  </parsed_output>
+
+  <story>
+  # Title of the Story
+
+  [Your full story here, using markdown for formatting]
+
+  </story>
+
+  END.
