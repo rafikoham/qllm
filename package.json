@@ -28,6 +28,7 @@
     "@rollup/plugin-terser": "0.4.4",
     "@rollup/plugin-typescript": "11.1.6",
     "@types/jest": "29.5.14",
+    "@types/node": "22.10.1",
     "babel-jest": "29.7.0",
     "eslint": "^9.9.1",
     "espree": "10.1.0",
@@ -40,7 +41,7 @@
     "ts-jest": "29.2.5",
     "typedoc": "0.26.7",
     "typedoc-plugin-markdown": "4.2.6",
-    "typescript": "^5.5.4"
+    "typescript": "5.7.2"
   },
   "engines": {
     "node": ">=16.5.0",
@@ -50,16 +51,19 @@
     "type": "git",
     "url": "git+https://github.com/quantalogic/qllm.git"
   },
-  "author": {
-    "name": "QuantaLogic",
-    "url": "https://quantalogic.app"
-  },
+  "author": "QuantaLogic (https://quantalogic.app)",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/quantalogic/qllm/issues"
   },
   "homepage": "https://github.com/quantalogic/qllm#readme",
   "dependencies": {
-    "@aws-sdk/client-sts": "^3.621.0"
+    "@aws-sdk/client-sts": "^3.621.0",
+    "llamaindex": "0.8.26"
+  },
+  "description": "![npm version](https://img.shields.io/npm/v/qllm)\r ![Stars](https://img.shields.io/github/stars/quantalogic/qllm)\r ![Forks](https://img.shields.io/github/forks/quantalogic/qllm)\r ![Downloads](https://img.shields.io/npm/dw/qllm)",
+  "main": "jest.config.js",
+  "directories": {
+    "doc": "docs"
   }
 }
