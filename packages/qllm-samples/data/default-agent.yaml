@@ -22,14 +22,19 @@ model:
     temperature: 0.7
     top_p: 1
     top_k: 250
+    streaming: true
 
 tools:
-  - name: rag_search
-    description: Search the web for information
+  - type: rag-search
     parameters:
-      type: object
-  
-  - name: rag_search_query
-    description: Search the web for information
+      model: gpt-4
+      embeddings_model: text-embedding-ada-002
+      chunk_size: 1000
+      chunk_overlap: 200
+      
+  - type: rag-search-querytool
     parameters:
-      type: object
+      model: gpt-4
+      embeddings_model: text-embedding-ada-002
+      search_type: semantic
+      max_results: 5
