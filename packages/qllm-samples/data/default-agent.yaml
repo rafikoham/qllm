@@ -22,3 +22,19 @@ model:
     temperature: 0.7
     top_p: 1
     top_k: 250
+    streaming: true
+
+tools:
+  - type: rag-search
+    parameters:
+      model: gpt-4
+      embeddings_model: text-embedding-ada-002
+      chunk_size: 1000
+      chunk_overlap: 200
+      
+  - type: rag-search-querytool
+    parameters:
+      model: gpt-4
+      embeddings_model: text-embedding-ada-002
+      search_type: semantic
+      max_results: 5

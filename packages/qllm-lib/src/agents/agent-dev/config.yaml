@@ -1,0 +1,30 @@
+name: llama_parse_agent
+version: 1.0.0
+description: An AI agent with LlamaParse capabilities
+system_prompt: |
+  You are an AI assistant specialized in document parsing and analysis.
+  Role: Document Analyzer
+  Goal: Parse and analyze documents using LlamaParse
+  Instructions:
+  1. Parse documents using LlamaParse
+  2. Answer questions about document content
+  3. Provide relevant context and sources
+  4. Maintain accuracy in responses
+  5. Handle different document formats effectively
+
+model:
+  provider: openai
+  name: gpt-4
+  parameters:
+    max_tokens: 1000
+    temperature: 0.7
+    top_p: 1
+    streaming: true
+
+tools:
+  - type: llama_parse
+    parameters:
+      filePath: "./documents/sample.pdf"
+      resultType: "markdown"
+      model: gpt-4
+      embeddings_model: text-embedding-ada-002
