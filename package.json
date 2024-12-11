@@ -48,16 +48,20 @@
     "type": "git",
     "url": "git+https://github.com/quantalogic/qllm.git"
   },
-  "author": {
-    "name": "QuantaLogic",
-    "url": "https://quantalogic.app"
-  },
+  "author": "QuantaLogic (https://quantalogic.app)",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/quantalogic/qllm/issues"
   },
   "homepage": "https://github.com/quantalogic/qllm#readme",
   "dependencies": {
-    "@aws-sdk/client-sts": "^3.621.0"
+    "@aws-sdk/client-sts": "^3.621.0",
+    "dotenv": "^16.4.5",
+    "llamaindex": "0.8.26"
+  },
+  "description": "![npm version](https://img.shields.io/npm/v/qllm)\r ![Stars](https://img.shields.io/github/stars/quantalogic/qllm)\r ![Forks](https://img.shields.io/github/forks/quantalogic/qllm)\r ![Downloads](https://img.shields.io/npm/dw/qllm)",
+  "main": "jest.config.js",
+  "directories": {
+    "doc": "docs"
   }
 }
