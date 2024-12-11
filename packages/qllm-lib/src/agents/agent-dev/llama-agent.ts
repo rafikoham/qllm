@@ -3,6 +3,9 @@ import {
   VectorStoreIndex,
   Document,
   OpenAIEmbedding,
+  NodeWithScore,
+  BaseNode,
+  MetadataMode,
 } from "llamaindex";
 import { AgentTool } from "../agent-types";
 import { JSONSchemaType } from "openai/lib/jsonschema";
@@ -11,6 +14,14 @@ interface LlamaAgentConfig {
   filePath: string;
   resultType?: "markdown" | "text";
   query?: string;
+}
+
+interface QueryResponse {
+  response: string;
+  sources: Array<{
+    content: string;
+    score?: number;
+  }>;
 }
 
 export class LlamaAgent implements AgentTool {
@@ -34,7 +45,7 @@ export class LlamaAgent implements AgentTool {
     };
   }
 
-  async initialize() {
+  async initialize(): Promise<boolean> {
     try {
       const reader = new LlamaParseReader({ 
         resultType: this.config.resultType || "markdown" 
@@ -50,7 +61,7 @@ export class LlamaAgent implements AgentTool {
     }
   }
 
-  async execute(inputs: Record<string, any>) {
+  async execute(inputs: Record<string, any>): Promise<QueryResponse> {
     if (!this.index) {
       await this.initialize();
     }
@@ -60,20 +71,20 @@ export class LlamaAgent implements AgentTool {
     }
 
     const queryEngine = this.index.asQueryEngine();
-    const { response, sourceNodes } = await queryEngine.query({
+    const response = await queryEngine.query({
       query: inputs.query || this.config.query || "Summarize the document",
     });
 
     return {
-      response,
-      sources: sourceNodes.map(node => ({
-        text: node.text,
+      response: response.response,
+      sources: (response.sourceNodes || []).map((node: NodeWithScore) => ({
+        content: node.node?.getContent(MetadataMode.NONE) || "",
         score: node.score
       }))
     };
   }
 
-  async streamExecute(inputs: Record<string, any>): AsyncGenerator<any> {
+  async *streamExecute(inputs: Record<string, any>): AsyncGenerator<QueryResponse> {
     const result = await this.execute(inputs);
     yield result;
   }
