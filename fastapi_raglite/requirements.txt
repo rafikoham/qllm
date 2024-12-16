@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+raglite
+rerankers
+sqlalchemy
